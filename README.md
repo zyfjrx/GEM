@@ -74,6 +74,7 @@ ECG:
 
 Images:
 - [ECG-Grounding-Images](https://huggingface.co/datasets/LANSG/ECG-Grounding) (mimic_gen)
+- [PTB-XL-Test-Images](https://huggingface.co/datasets/LANSG/ECG-Grounding) (ptb-xl-gen)
 - [ECG-Instruct](https://huggingface.co/datasets/PULSE-ECG/ECGInstruct/tree/main)
 - [ECG-Bench](https://huggingface.co/datasets/PULSE-ECG/ECGBench)
 
@@ -94,6 +95,7 @@ After downloading all of them, organize the data as follows in `./data`,
     └── csn_part_noise_layout_papersize
     └── gen_images
       └── mimic_gen
+      └── ptb-xl-gen
     └── mimic
     └── mimic_v4
     └── ptb-xl
@@ -145,14 +147,11 @@ For ECG-Bench:
 If you find GEM helpful for your research and applications, please cite our paper:
 
 ```bibtex
-@misc{lan2025gemempoweringmllmgrounded,
-      title={GEM: Empowering MLLM for Grounded ECG Understanding with Time Series and Images}, 
-      author={Xiang Lan and Feng Wu and Kai He and Qinghao Zhao and Shenda Hong and Mengling Feng},
-      year={2025},
-      eprint={2503.06073},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2503.06073}, 
+@article{lan2025gem,
+  title={Gem: Empowering mllm for grounded ecg understanding with time series and images},
+  author={Lan, Xiang and Wu, Feng and He, Kai and Zhao, Qinghao and Hong, Shenda and Feng, Mengling},
+  journal={arXiv preprint arXiv:2503.06073},
+  year={2025}
 }
 ```
 
