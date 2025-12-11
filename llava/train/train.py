@@ -65,6 +65,7 @@ class ModelArguments:
     ecg_projector_type: Optional[str] = field(default='linear')
     pretrain_ecg_projector: Optional[str] = field(default=None)
     vision_tower: Optional[str] = field(default=None)
+    use_deepencoder: bool = field(default=False, metadata={"help": "Use DeepSeek-OCR's DeepEncoder (SAM+CLIP-L) instead of CLIP"})
     mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
     mm_projector_type: Optional[str] = field(default='linear')

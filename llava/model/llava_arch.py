@@ -104,6 +104,10 @@ class LlavaMetaModel:
         mm_vision_select_feature = model_args.mm_vision_select_feature
         pretrain_mm_mlp_adapter = model_args.pretrain_mm_mlp_adapter
         mm_patch_merge_type = model_args.mm_patch_merge_type
+        
+        # 支持DeepEncoder (DeepSeek-OCR双编码器)
+        use_deepencoder = getattr(model_args, 'use_deepencoder', False)
+        self.config.use_deepencoder = use_deepencoder
 
         self.config.mm_vision_tower = vision_tower
 
