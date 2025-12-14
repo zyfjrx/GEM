@@ -21,7 +21,21 @@ def build_vision_tower(vision_tower_cfg, **kwargs):
     use_deepencoder = getattr(vision_tower_cfg, 'use_deepencoder', False)
     if use_deepencoder:
         from .deepencoder_tower import DeepEncoderVisionTower
-        return DeepEncoderVisionTower(vision_tower, args=vision_tower_cfg, **kwargs)
+        # 获取DeepEncoder的模式配置
+        deepencoder_mode = getattr(vision_tower_cfg, 'deepencoder_mode', 'base')
+        deepencoder_base_size = getattr(vision_tower_cfg, 'deepencoder_base_size', None)
+        deepencoder_image_size = getattr(vision_tower_cfg, 'deepencoder_image_size', None)
+        deepencoder_crop_mode = getattr(vision_tower_cfg, 'deepencoder_crop_mode', None)
+        
+        return DeepEncoderVisionTower(
+            vision_tower, 
+            args=vision_tower_cfg,
+            mode=deepencoder_mode,
+            base_size=deepencoder_base_size,
+            image_size=deepencoder_image_size,
+            crop_mode=deepencoder_crop_mode,
+            **kwargs
+        )
     
     # 原有的CLIP逻辑
     if is_absolute_path_exists or (vision_tower and (vision_tower.startswith("openai") or vision_tower.startswith("laion") or "ShareGPT4V" in vision_tower)):

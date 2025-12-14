@@ -140,30 +140,69 @@ class DeepEncoderVisionTower(nn.Module):
                  -> CLIP-L (以SAM输出作为patch embedding)
                  -> 特征concat (2048维)
                  
-    关于 dynamic_preprocess:
-        - 简化模式 (use_dynamic_preprocess=False): 
-          直接处理整张图像，提取全局特征
+    支持的模式 (参考DeepSeek-OCR):
+        - tiny:   base_size=512,  image_size=512,  crop_mode=False, 64 tokens
+        - small:  base_size=640,  image_size=640,  crop_mode=False, 100 tokens
+        - base:   base_size=1024, image_size=1024, crop_mode=False, 256 tokens (默认)
+        - large:  base_size=1280, image_size=1280, crop_mode=False, 400 tokens
+        - gundam: base_size=1024, image_size=640,  crop_mode=True,  多分辨率裁剪
+                 
+    关于 crop_mode (动态预处理):
+        - crop_mode=False: 直接处理整张图像，提取全局特征
           输出: [B, num_patches, 2048]
           
-        - 完整模式 (use_dynamic_preprocess=True):
-          先切分图像，分别提取局部和全局特征，然后拼接
+        - crop_mode=True: 先切分图像，分别提取局部和全局特征，然后拼接
           输出: [B, (local_patches + global_patches), 2048]
     """
     
-    def __init__(self, vision_tower, args, delay_load=False, use_dynamic_preprocess=False):
+    # 预定义的模式配置
+    MODE_CONFIGS = {
+        "tiny":   {"base_size": 512,  "image_size": 512,  "crop_mode": False},
+        "small":  {"base_size": 640,  "image_size": 640,  "crop_mode": False},
+        "base":   {"base_size": 1024, "image_size": 1024, "crop_mode": False},
+        "large":  {"base_size": 1280, "image_size": 1280, "crop_mode": False},
+        "gundam": {"base_size": 1024, "image_size": 640,  "crop_mode": True},
+    }
+    
+    def __init__(
+        self, 
+        vision_tower, 
+        args, 
+        delay_load=False, 
+        use_dynamic_preprocess=False,  # 保持向后兼容
+        mode: str = "base",            # 新增：模式选择
+        base_size: int = None,         # 新增：可覆盖base_size
+        image_size: int = None,        # 新增：可覆盖image_size  
+        crop_mode: bool = None,        # 新增：可覆盖crop_mode
+    ):
         super().__init__()
         
         self.is_loaded = False
         self.vision_tower_name = vision_tower  # DeepSeek-OCR模型路径
         
-        # 动态预处理配置
-        self.use_dynamic_preprocess = use_dynamic_preprocess
+        # 加载模式配置
+        mode_config = self.MODE_CONFIGS.get(mode, self.MODE_CONFIGS["base"])
         
-        # 图像尺寸配置
-        self.sam_image_size = 1024  # SAM输入尺寸 (用于全局)
-        self.clip_image_size = 224  # CLIP输入尺寸
-        self.patch_size = 14  # CLIP patch size
-        self.local_image_size = 640  # 局部patch尺寸 (动态预处理时使用)
+        # 支持自定义覆盖
+        self.sam_image_size = base_size if base_size is not None else mode_config["base_size"]
+        self.local_image_size = image_size if image_size is not None else mode_config["image_size"]
+        
+        # crop_mode 优先级: 显式参数 > use_dynamic_preprocess (向后兼容) > 模式默认值
+        if crop_mode is not None:
+            self.crop_mode = crop_mode
+        elif use_dynamic_preprocess:
+            self.crop_mode = True
+        else:
+            self.crop_mode = mode_config["crop_mode"]
+        
+        # 保持向后兼容
+        self.use_dynamic_preprocess = self.crop_mode
+        
+        # CLIP配置 (固定值，由预训练模型决定)
+        self.clip_image_size = 224  # CLIP-L 标准输入尺寸
+        self.patch_size = 14        # CLIP-L 标准 patch size
+        
+        self.mode = mode
         
         # 编码器 (延迟初始化)
         self.sam_model: Optional[ImageEncoderViT] = None
@@ -207,7 +246,8 @@ class DeepEncoderVisionTower(nn.Module):
         
         self.is_loaded = True
         print(f"Loaded DeepEncoder vision tower from {self.vision_tower_name}")
-        print(f"  - Mode: {'完整模式 (动态切分)' if self.use_dynamic_preprocess else '简化模式 (全局特征)'}")
+        print(f"  - Mode: {self.mode} (base_size={self.sam_image_size}, image_size={self.local_image_size}, crop_mode={self.crop_mode})")
+        print(f"  - Processing: {'动态切分 (局部+全局)' if self.crop_mode else '全局特征'}")
     
     def _load_pretrained_weights(self, model_path: str):
         """
@@ -346,20 +386,19 @@ class DeepEncoderVisionTower(nn.Module):
     @torch.no_grad()
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """
-        编码图像
+        编码图像 (标准forward，不带动态切分)
         
-        简化模式: 
-            输入: [B, C, H, W]
-            输出: [B, num_patches, 2048]
+        输入: [B, C, H, W]
+        输出: [B, num_patches, 2048]
             
-        完整模式 (带动态切分):
-            需要使用 forward_with_preprocess() 方法
+        注意: 如果需要使用 crop_mode=True 的动态切分功能，
+              请使用 forward_with_dynamic_preprocess() 方法
         
         Args:
             images: 输入图像tensor [B, C, H, W]
             
         Returns:
-            features: 编码特征
+            features: 编码特征 [B, num_patches, 2048]
         """
         if images.dim() == 3:
             images = images.unsqueeze(0)
@@ -389,11 +428,11 @@ class DeepEncoderVisionTower(nn.Module):
         dtype: torch.dtype = None
     ) -> List[torch.Tensor]:
         """
-        完整模式: 带动态切分的编码
+        Gundam模式 (crop_mode=True): 带动态切分的编码
         
         复用DeepSeek-OCR的处理策略:
-        1. 对大图进行动态切分 (dynamic_preprocess)
-        2. 分别编码局部patches和全局图像
+        1. 对大图进行动态切分 (使用 local_image_size=640 作为切分尺寸)
+        2. 分别编码局部patches和全局图像 (使用 sam_image_size 作为全局尺寸)
         3. 拼接: [局部特征, 全局特征]
         
         Args:

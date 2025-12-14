@@ -66,6 +66,10 @@ class ModelArguments:
     pretrain_ecg_projector: Optional[str] = field(default=None)
     vision_tower: Optional[str] = field(default=None)
     use_deepencoder: bool = field(default=False, metadata={"help": "Use DeepSeek-OCR's DeepEncoder (SAM+CLIP-L) instead of CLIP"})
+    deepencoder_mode: str = field(default="base", metadata={"help": "DeepEncoder mode: tiny/small/base/large/gundam"})
+    deepencoder_base_size: Optional[int] = field(default=None, metadata={"help": "DeepEncoder base_size (global view size), overrides mode default"})
+    deepencoder_image_size: Optional[int] = field(default=None, metadata={"help": "DeepEncoder image_size (local crop size), overrides mode default"})
+    deepencoder_crop_mode: Optional[bool] = field(default=None, metadata={"help": "DeepEncoder crop_mode (dynamic preprocessing), overrides mode default"})
     mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
     mm_projector_type: Optional[str] = field(default='linear')

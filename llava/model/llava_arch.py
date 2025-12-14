@@ -108,6 +108,13 @@ class LlavaMetaModel:
         # 支持DeepEncoder (DeepSeek-OCR双编码器)
         use_deepencoder = getattr(model_args, 'use_deepencoder', False)
         self.config.use_deepencoder = use_deepencoder
+        
+        # DeepEncoder 模式配置
+        if use_deepencoder:
+            self.config.deepencoder_mode = getattr(model_args, 'deepencoder_mode', 'base')
+            self.config.deepencoder_base_size = getattr(model_args, 'deepencoder_base_size', None)
+            self.config.deepencoder_image_size = getattr(model_args, 'deepencoder_image_size', None)
+            self.config.deepencoder_crop_mode = getattr(model_args, 'deepencoder_crop_mode', None)
 
         self.config.mm_vision_tower = vision_tower
 
