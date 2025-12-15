@@ -811,27 +811,39 @@ class LazySupervisedDataset(Dataset):
             processor = self.data_args.image_processor
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
             image_size = image.size
-            assert self.data_args.image_aspect_ratio in ['pad', 'anyres', 'ori']
-            if self.data_args.image_aspect_ratio == 'pad':
-                def expand2square(pil_img, background_color):
-                    width, height = pil_img.size
-                    if width == height:
-                        return pil_img
-                    elif width > height:
-                        result = Image.new(pil_img.mode, (width, width), background_color)
-                        result.paste(pil_img, (0, (width - height) // 2))
-                        return result
-                    else:
-                        result = Image.new(pil_img.mode, (height, height), background_color)
-                        result.paste(pil_img, ((height - width) // 2, 0))
-                        return result
-                image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
-                image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
-            elif self.data_args.image_aspect_ratio == 'anyres':
-                image = process_anyres_image(image, processor, self.model_config.image_grid_pinpoints)
+            
+            # 检查是否使用 DeepEncoder Gundam Mode
+            use_gundam_mode = getattr(self.model_config, 'use_gundam_mode', False)
+            if use_gundam_mode:
+                # Gundam Mode: 使用 DeepEncoder 的预处理器
+                from llava.model.multimodal_encoder.deepencoder_tower import DeepEncoderImageProcessor
+                if not hasattr(self, '_deepencoder_processor'):
+                    self._deepencoder_processor = DeepEncoderImageProcessor()
+                processed = self._deepencoder_processor([image], mode="gundam")
+                image = processed[0]  # 返回 dict: {'global_view', 'patches', 'crop_ratio'}
             else:
-                # assert False
-                image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
+                # Base Mode: 标准处理
+                assert self.data_args.image_aspect_ratio in ['pad', 'anyres', 'ori']
+                if self.data_args.image_aspect_ratio == 'pad':
+                    def expand2square(pil_img, background_color):
+                        width, height = pil_img.size
+                        if width == height:
+                            return pil_img
+                        elif width > height:
+                            result = Image.new(pil_img.mode, (width, width), background_color)
+                            result.paste(pil_img, (0, (width - height) // 2))
+                            return result
+                        else:
+                            result = Image.new(pil_img.mode, (height, height), background_color)
+                            result.paste(pil_img, ((height - width) // 2, 0))
+                            return result
+                    image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
+                    image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
+                elif self.data_args.image_aspect_ratio == 'anyres':
+                    image = process_anyres_image(image, processor, self.model_config.image_grid_pinpoints)
+                else:
+                    # assert False
+                    image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
             sources = preprocess_multimodal(
                 copy.deepcopy([e["conversations"] for e in sources]),
                 self.data_args)
@@ -917,7 +929,22 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                                 data_path=data_args.data_path,
                                 data_args=data_args,
                                 model_config=model_config)
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    
+    # 检查是否使用 Gundam Mode
+    use_gundam_mode = getattr(model_config, 'use_gundam_mode', False)
+    if use_gundam_mode:
+        # 使用 DeepEncoder 的自定义 Collator
+        from llava.model.multimodal_encoder.deepencoder_collator import get_deepencoder_collator
+        data_collator = get_deepencoder_collator(
+            mode="gundam",
+            tokenizer=tokenizer,
+            max_length=getattr(model_config, 'tokenizer_model_max_length', 2048)
+        )
+        print("[Gundam Mode] Using DeepEncoderCollator for dynamic shape handling")
+    else:
+        # 使用标准 Collator
+        data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    
     return dict(train_dataset=train_dataset,
                 eval_dataset=None,
                 data_collator=data_collator)

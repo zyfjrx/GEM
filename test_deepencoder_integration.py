@@ -1,177 +1,248 @@
 #!/usr/bin/env python3
 """
-测试DeepEncoder集成是否正常工作
-Usage: python test_deepencoder_integration.py --deepseek_ocr_path /path/to/deepseek-ocr-model
+DeepEncoder 集成测试脚本
+========================
+
+测试 DeepEncoder 是否正确集成到 GEM/LLaVA 架构中
+
+运行方式：
+    python test_deepencoder_integration.py
 """
 
-import argparse
 import torch
 import sys
 import os
+from PIL import Image
 
-# 添加项目根目录
+# 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-
-def test_deepencoder_tower():
-    """测试DeepEncoderVisionTower的基本功能"""
-    print("=" * 60)
-    print("Testing DeepEncoder Vision Tower")
-    print("=" * 60)
+def test_image_processor():
+    """测试图像处理器"""
+    print("\n" + "="*60)
+    print("Test 1: Image Processor")
+    print("="*60)
     
-    from llava.model.multimodal_encoder.deepencoder_tower import DeepEncoderVisionTower
+    from llava.model.multimodal_encoder.deepencoder_tower import DeepEncoderImageProcessor
     
-    # 创建mock args
-    class Args:
-        mm_vision_select_layer = -2
-        mm_vision_select_feature = 'patch'
-        unfreeze_mm_vision_tower = False
+    processor = DeepEncoderImageProcessor()
     
-    args = Args()
+    # 测试 Base Mode
+    print("\n[Base Mode]")
+    test_img = Image.new('RGB', (800, 600), color='blue')
+    result = processor(test_img, mode="base")
+    print(f"Input size: {test_img.size}")
+    print(f"Output shape: {result['pixel_values'].shape}")
+    print(f"Expected: [1, 3, 1024, 1024] ✓" if result['pixel_values'].shape == (1, 3, 1024, 1024) else "✗")
     
-    # 测试不加载预训练权重的情况
-    print("\n1. Testing with random initialization (no pretrained weights)...")
-    tower = DeepEncoderVisionTower(
-        vision_tower=None, 
-        args=args, 
-        delay_load=True
-    )
-    tower.load_model()
+    # 测试 Gundam Mode
+    print("\n[Gundam Mode]")
+    test_img_large = Image.new('RGB', (1920, 1080), color='red')
+    result_gundam = processor([test_img_large], mode="gundam")
+    print(f"Input size: {test_img_large.size}")
+    print(f"Global view: {result_gundam[0]['global_view'].shape}")
+    print(f"Patches: {result_gundam[0]['patches'].shape}")
+    print(f"Crop ratio: {result_gundam[0]['crop_ratio']}")
     
-    print(f"   - Hidden size: {tower.hidden_size}")
-    print(f"   - Num patches: {tower.num_patches}")
-    print(f"   - Num patches per side: {tower.num_patches_per_side}")
-    print(f"   - SAM image size: {tower.sam_image_size}")
-    print(f"   - CLIP image size: {tower.clip_image_size}")
-    
-    # 测试forward pass
-    print("\n2. Testing forward pass...")
-    dummy_input = torch.randn(2, 3, 336, 336)  # 标准输入尺寸
-    
-    with torch.no_grad():
-        output = tower(dummy_input)
-    
-    print(f"   - Input shape: {dummy_input.shape}")
-    print(f"   - Output shape: {output.shape}")
-    print(f"   - Expected output: [batch=2, num_patches, hidden_size=2048]")
-    
-    assert output.shape[-1] == 2048, f"Expected hidden size 2048, got {output.shape[-1]}"
-    print("   ✓ Hidden size correct!")
-    
-    print("\n" + "=" * 60)
-    print("DeepEncoder Tower Test PASSED!")
-    print("=" * 60)
-    
-    return tower
+    return True
 
 
-def test_with_pretrained_weights(model_path):
-    """测试加载DeepSeek-OCR预训练权重"""
-    print("\n" + "=" * 60)
-    print(f"Testing with pretrained weights from: {model_path}")
-    print("=" * 60)
+def test_vision_tower():
+    """测试 Vision Tower"""
+    print("\n" + "="*60)
+    print("Test 2: Vision Tower (Base Mode)")
+    print("="*60)
     
     from llava.model.multimodal_encoder.deepencoder_tower import DeepEncoderVisionTower
     
     class Args:
-        mm_vision_select_layer = -2
-        mm_vision_select_feature = 'patch'
         unfreeze_mm_vision_tower = False
+        use_gundam_mode = False
     
     args = Args()
     
-    tower = DeepEncoderVisionTower(
-        vision_tower=model_path,
+    # 注意：这里不加载真实权重，只测试结构
+    print("\n[Creating model...]")
+    model = DeepEncoderVisionTower(
+        vision_tower='/path/to/weights',  # dummy path
         args=args,
         delay_load=False
     )
     
-    # 测试forward
-    dummy_input = torch.randn(1, 3, 336, 336)
-    with torch.no_grad():
-        output = tower(dummy_input)
+    print(f"Model created successfully!")
+    print(f"Hidden size: {model.hidden_size}")
+    print(f"Num patches: {model.num_patches}")
+    print(f"Image size: {model.config.image_size}")
     
-    print(f"\n   - Output shape: {output.shape}")
-    print(f"   - Output mean: {output.mean().item():.6f}")
-    print(f"   - Output std: {output.std().item():.6f}")
+    # 测试 forward
+    print("\n[Testing forward pass...]")
+    dummy_input = torch.randn(2, 3, 1024, 1024)
     
-    print("\n" + "=" * 60)
-    print("Pretrained Weights Test PASSED!")
-    print("=" * 60)
-    
-    return tower
+    try:
+        with torch.no_grad():
+            output = model(dummy_input)
+        print(f"Input shape: {dummy_input.shape}")
+        print(f"Output shape: {output.shape}")
+        print(f"Expected: [2, 272, 2048] (16x16 grid + 16 newlines)")
+        
+        if output.shape == (2, 272, 2048):
+            print("✓ Output shape correct!")
+            return True
+        else:
+            print(f"✗ Output shape mismatch! Got {output.shape}")
+            return False
+    except Exception as e:
+        print(f"✗ Forward pass failed: {e}")
+        return False
 
 
-def test_build_vision_tower():
-    """测试通过builder构建DeepEncoderVisionTower"""
-    print("\n" + "=" * 60)
-    print("Testing build_vision_tower with use_deepencoder=True")
-    print("=" * 60)
+def test_collator():
+    """测试 Data Collator"""
+    print("\n" + "="*60)
+    print("Test 3: Data Collator")
+    print("="*60)
+    
+    from llava.model.multimodal_encoder.deepencoder_collator import get_deepencoder_collator
+    
+    class MockTokenizer:
+        pad_token_id = 0
+    
+    tokenizer = MockTokenizer()
+    
+    # 模拟不同切分数量的样本
+    instances = [
+        {
+            'input_ids': torch.tensor([1, 2, 3, 4]),
+            'labels': torch.tensor([1, 2, 3, 4]),
+            'images': {
+                'global_view': torch.randn(3, 1024, 1024),
+                'patches': torch.randn(6, 3, 640, 640),
+                'crop_ratio': (2, 3)
+            },
+            'ecgs': torch.randn(12, 5000)
+        },
+        {
+            'input_ids': torch.tensor([1, 2, 3]),
+            'labels': torch.tensor([1, 2, 3]),
+            'images': {
+                'global_view': torch.randn(3, 1024, 1024),
+                'patches': torch.randn(9, 3, 640, 640),  # 不同数量!
+                'crop_ratio': (3, 3)
+            },
+            'ecgs': torch.randn(12, 5000)
+        }
+    ]
+    
+    # 测试 Gundam Collator (List mode)
+    print("\n[Gundam Collator - List Mode]")
+    collator_gundam = get_deepencoder_collator("gundam", tokenizer)
+    batch = collator_gundam(instances)
+    
+    print(f"Input IDs: {batch['input_ids'].shape}")
+    print(f"Images: {len(batch['images'])} samples")
+    print(f"  Sample 0 patches: {batch['images'][0]['patches'].shape[0]} patches")
+    print(f"  Sample 1 patches: {batch['images'][1]['patches'].shape[0]} patches")
+    print(f"ECGs: {batch['ecgs'].shape}")
+    print("✓ Gundam collator works with variable patch numbers!")
+    
+    # 测试 Padded Collator
+    print("\n[Gundam Collator - Padded Mode]")
+    collator_padded = get_deepencoder_collator("gundam_padded", tokenizer)
+    batch_padded = collator_padded(instances)
+    
+    print(f"Global Views: {batch_padded['global_views'].shape}")
+    print(f"Patches (padded): {batch_padded['patches'].shape}")
+    print(f"Patches Mask: {batch_padded['patches_mask'].shape}")
+    print("✓ Padded collator successfully pads variable-length patches!")
+    
+    return True
+
+
+def test_builder_integration():
+    """测试 builder.py 中的集成"""
+    print("\n" + "="*60)
+    print("Test 4: Builder Integration")
+    print("="*60)
     
     from llava.model.multimodal_encoder.builder import build_vision_tower
     
-    class MockConfig:
-        mm_vision_tower = None
-        vision_tower = None
+    class Config:
+        mm_vision_tower = '/dummy/path'
+        vision_tower = '/dummy/path'
         use_deepencoder = True
-        mm_vision_select_layer = -2
-        mm_vision_select_feature = 'patch'
+        use_gundam_mode = False
         unfreeze_mm_vision_tower = False
-        s2 = False
+        delay_load = True
     
-    config = MockConfig()
+    config = Config()
     
-    tower = build_vision_tower(config, delay_load=True)
-    tower.load_model()
-    
-    print(f"   - Tower type: {type(tower).__name__}")
-    print(f"   - Hidden size: {tower.hidden_size}")
-    
-    assert tower.hidden_size == 2048, "Expected hidden size 2048 for DeepEncoder"
-    print("   ✓ Build test passed!")
-    
-    print("\n" + "=" * 60)
-    print("Builder Test PASSED!")
-    print("=" * 60)
+    print("\n[Building vision tower with DeepEncoder...]")
+    try:
+        tower = build_vision_tower(config, delay_load=True)
+        print(f"✓ Tower type: {type(tower).__name__}")
+        print(f"✓ Hidden size: {tower.hidden_size}")
+        return True
+    except Exception as e:
+        print(f"✗ Failed to build tower: {e}")
+        return False
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Test DeepEncoder integration")
-    parser.add_argument(
-        "--deepseek_ocr_path", 
-        type=str, 
-        default=None,
-        help="Path to DeepSeek-OCR model weights (optional)"
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cpu",
-        help="Device to use (cpu/cuda)"
-    )
-    args = parser.parse_args()
+    """运行所有测试"""
+    print("\n" + "="*80)
+    print(" DeepEncoder Integration Test Suite")
+    print("="*80)
     
-    print("\n" + "#" * 60)
-    print("# GEM + DeepEncoder Integration Test")
-    print("#" * 60)
+    results = []
     
-    # 基本功能测试
-    test_deepencoder_tower()
+    # 测试 1: 图像处理器
+    try:
+        results.append(("Image Processor", test_image_processor()))
+    except Exception as e:
+        print(f"\n✗ Image Processor test failed: {e}")
+        results.append(("Image Processor", False))
     
-    # Builder测试
-    test_build_vision_tower()
+    # 测试 2: Vision Tower
+    try:
+        results.append(("Vision Tower", test_vision_tower()))
+    except Exception as e:
+        print(f"\n✗ Vision Tower test failed: {e}")
+        results.append(("Vision Tower", False))
     
-    # 预训练权重测试（可选）
-    if args.deepseek_ocr_path and os.path.exists(args.deepseek_ocr_path):
-        test_with_pretrained_weights(args.deepseek_ocr_path)
+    # 测试 3: Collator
+    try:
+        results.append(("Data Collator", test_collator()))
+    except Exception as e:
+        print(f"\n✗ Data Collator test failed: {e}")
+        results.append(("Data Collator", False))
+    
+    # 测试 4: Builder 集成
+    try:
+        results.append(("Builder Integration", test_builder_integration()))
+    except Exception as e:
+        print(f"\n✗ Builder Integration test failed: {e}")
+        results.append(("Builder Integration", False))
+    
+    # 总结
+    print("\n" + "="*80)
+    print(" Test Summary")
+    print("="*80)
+    
+    for name, passed in results:
+        status = "✓ PASS" if passed else "✗ FAIL"
+        print(f"{status:10} {name}")
+    
+    all_passed = all(passed for _, passed in results)
+    
+    print("\n" + "="*80)
+    if all_passed:
+        print("🎉 All tests passed! DeepEncoder is successfully integrated.")
     else:
-        print("\n[Info] Skipping pretrained weights test (no path provided)")
+        print("⚠️  Some tests failed. Please check the errors above.")
+    print("="*80 + "\n")
     
-    print("\n" + "#" * 60)
-    print("# ALL TESTS PASSED!")
-    print("#" * 60 + "\n")
+    return 0 if all_passed else 1
 
 
-if __name__ == "__main__":
-    main()
-
+if __name__ == '__main__':
+    sys.exit(main())

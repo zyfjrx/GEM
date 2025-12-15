@@ -203,8 +203,23 @@ class LlavaMetaForCausalLM(ABC):
         return self.get_model().get_vision_tower()
 
     def encode_images(self, images):
-        image_features = self.get_model().get_vision_tower()(images)
-        image_features = self.get_model().mm_projector(image_features)
+        vision_tower = self.get_model().get_vision_tower()
+        
+        # 检查是否使用 Gundam Mode
+        use_gundam_mode = getattr(self.config, 'use_gundam_mode', False)
+        use_deepencoder = getattr(self.config, 'use_deepencoder', False)
+        
+        if use_deepencoder and use_gundam_mode and isinstance(images, list) and isinstance(images[0], dict):
+            # Gundam Mode: images 是 list of dicts
+            image_features = vision_tower.forward_gundam(images)
+            # image_features 是 list of tensors，每个形状不同
+            # 逐个通过 mm_projector
+            image_features = [self.get_model().mm_projector(feat.unsqueeze(0)).squeeze(0) for feat in image_features]
+        else:
+            # Base Mode: 标准处理
+            image_features = vision_tower(images)
+            image_features = self.get_model().mm_projector(image_features)
+        
         return image_features
 
     def prepare_inputs_labels_for_multimodal(
@@ -221,7 +236,13 @@ class LlavaMetaForCausalLM(ABC):
 
         ecg_features = self.encode_ecgs(ecgs)
 
-        if type(images) is list or images.ndim == 5:
+        # 检查是否为 Gundam Mode 的数据格式
+        use_gundam_mode = getattr(self.config, 'use_gundam_mode', False)
+        if use_gundam_mode and type(images) is list and len(images) > 0 and isinstance(images[0], dict):
+            # Gundam Mode: images 是 list of dicts
+            image_features = self.encode_images(images)
+            # image_features 已经是 list of tensors
+        elif type(images) is list or images.ndim == 5:
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)

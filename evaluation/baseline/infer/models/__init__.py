@@ -78,6 +78,13 @@ model_configs = {
         'model_path_or_name': '/path/to/Qwen2-VL-7B-Instruct',
         'call_type': 'local',
         'tp': 1
+    },
+    'gem-deepencoder': {
+        'load': ('.gem_model', 'load_model'),
+        'infer': ('.gem_model', 'infer'),
+        'model_path_or_name': '/path/to/your/trained/gem-deepencoder',  # 需要修改为你的模型路径
+        'call_type': 'local',
+        'tp': 1
     }
 }
 
