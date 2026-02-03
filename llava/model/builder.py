@@ -16,6 +16,7 @@
 import os
 import warnings
 import shutil
+import json
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch
@@ -23,8 +24,22 @@ from llava.model import *
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
+def _read_model_type(model_path: str):
+    for filename in ("config.json", "configuration.json"):
+        path = os.path.join(model_path, filename)
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f).get("model_type")
+            except Exception:
+                return None
+    return None
+
+
+
+def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto",device="cuda", use_flash_attn=False, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
+    attn_implementation = kwargs.get("attn_implementation")
 
     if device != "cuda":
         kwargs['device_map'] = {"": device}
@@ -115,29 +130,32 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
             elif "qwen" in model_name.lower() or "quyen" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path)
-                if "moe" in model_name.lower() or "A14B" in model_name.lower():
-                    from llava.model.language_model.llava_qwen_moe import LlavaQwenMoeConfig
-                    if overwrite_config is not None:
-                        llava_cfg = LlavaQwenMoeConfig.from_pretrained(model_path)
-                        rank0_print(f"Overwriting config with {overwrite_config}")
-                        for k, v in overwrite_config.items():
-                            setattr(llava_cfg, k, v)
-                        model = LlavaQwenMoeForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
-                    else:
-                        model = LlavaQwenMoeForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, **kwargs)
-
+                model_type = _read_model_type(model_path)
+                is_qwen3_moe = model_type == "qwen3_moe" or "qwen3" in model_name.lower() or "qwen3" in model_path.lower()
+                if is_qwen3_moe:
+                    from llava.model.language_model.llava_qwen3_moe import LlavaQwen3MoeForCausalLM
+                    model = LlavaQwen3MoeForCausalLM.from_pretrained(
+                        model_path,
+                        low_cpu_mem_usage=True,
+                        attn_implementation=attn_implementation,
+                        **kwargs
+                    )
                 else:
                     from llava.model.language_model.llava_qwen import LlavaQwenConfig
-                    overwrite_config=None
-                    attn_implementation="flash_attention_2"
+                    overwrite_config = None
                     if overwrite_config is not None:
                         llava_cfg = LlavaQwenConfig.from_pretrained(model_path)
-                        rank0_print(f"Overwriting config with {overwrite_config}")
                         for k, v in overwrite_config.items():
                             setattr(llava_cfg, k, v)
-                        model = LlavaQwenForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
+                        model = LlavaQwenForCausalLM.from_pretrained(
+                            model_path, low_cpu_mem_usage=True,
+                            attn_implementation=attn_implementation, config=llava_cfg, **kwargs
+                        )
                     else:
-                        model = LlavaQwenForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, **kwargs)
+                        model = LlavaQwenForCausalLM.from_pretrained(
+                            model_path, low_cpu_mem_usage=True,
+                            attn_implementation=attn_implementation, **kwargs
+                        )
 
             elif "gem" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)

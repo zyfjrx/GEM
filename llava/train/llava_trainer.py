@@ -9,9 +9,15 @@ from transformers.trainer import (
     is_sagemaker_mp_enabled,
     get_parameter_names,
     has_length,
-    ALL_LAYERNORM_LAYERS,
     logger,
 )
+
+# ALL_LAYERNORM_LAYERS was removed in transformers >= 4.46
+# Define it manually for compatibility
+try:
+    from transformers.trainer import ALL_LAYERNORM_LAYERS
+except ImportError:
+    ALL_LAYERNORM_LAYERS = [nn.LayerNorm]
 from typing import List, Optional
 
 
@@ -132,12 +138,15 @@ class LengthGroupedSampler(Sampler):
 
 class LLaVATrainer(Trainer):
 
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.train_dataset is None or not has_length(self.train_dataset):
+    def _get_train_sampler(self, dataset=None) -> Optional[torch.utils.data.Sampler]:
+        # dataset parameter added for transformers >= 4.46 compatibility
+        if dataset is None:
+            dataset = self.train_dataset
+        if dataset is None or not has_length(dataset):
             return None
 
         if self.args.group_by_modality_length:
-            lengths = self.train_dataset.modality_lengths
+            lengths = dataset.modality_lengths
             return LengthGroupedSampler(
                 self.args.train_batch_size,
                 world_size=self.args.world_size * self.args.gradient_accumulation_steps,
@@ -145,7 +154,7 @@ class LLaVATrainer(Trainer):
                 group_by_modality=True,
             )
         else:
-            return super()._get_train_sampler()
+            return super()._get_train_sampler(dataset)
 
     def create_optimizer(self):
         """
