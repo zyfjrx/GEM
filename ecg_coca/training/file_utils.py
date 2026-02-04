@@ -13,7 +13,7 @@ def remote_sync_s3(local_dir, remote_dir):
     if result.returncode != 0:
         logging.error(f"Error: Failed to sync with S3 bucket {result.stderr.decode('utf-8')}")
         return False
-        
+
     logging.info(f"Successfully synced with S3 bucket")
     return True
 
@@ -71,7 +71,8 @@ def pt_load(file_path, map_location=None):
         logging.info('Loading remote checkpoint, which may take a bit.')
     of = fsspec.open(file_path, "rb")
     with of as f:
-        out = torch.load(f, map_location=map_location)
+        # weights_only=False for PyTorch 2.6+ compatibility
+        out = torch.load(f, map_location=map_location, weights_only=False)
     return out
 
 def check_exists(file_path):
