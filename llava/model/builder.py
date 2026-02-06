@@ -36,10 +36,8 @@ def _read_model_type(model_path: str):
     return None
 
 
-
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto",device="cuda", use_flash_attn=False, **kwargs):
+def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
-    attn_implementation = kwargs.get("attn_implementation")
 
     if device != "cuda":
         kwargs['device_map'] = {"": device}
@@ -65,11 +63,41 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if 'lora' in model_name.lower() and model_base is None:
             warnings.warn('There is `lora` in model name but no `model_base` is provided. If you are loading a LoRA model, please provide the `model_base` argument. Detailed instruction: https://github.com/haotian-liu/LLaVA#launch-a-model-worker-lora-weights-unmerged.')
         if 'lora' in model_name.lower() and model_base is not None:
-            from llava.model.language_model.llava_llama import LlavaConfig
-            lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path)
+            model_type = _read_model_type(model_path)
+            is_qwen3_moe = model_type == "qwen3_moe" or "qwen3-moe" in model_name.lower()
+            is_qwen2 = model_type == "qwen2" or "qwen2" in model_name.lower() or "qwen" in model_name.lower()
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
+            print(model_type)
+            print(is_qwen3_moe)
             print('Loading LLaVA from base model...')
-            model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
+            if is_qwen3_moe:
+                from llava.model.language_model.llava_qwen3_moe import LlavaQwen3MoeConfig
+                from llava.model.language_model.llava_qwen3_moe import LlavaQwen3MoeForCausalLM
+                lora_cfg_pretrained = LlavaQwen3MoeConfig.from_pretrained(model_path)
+                model = LlavaQwen3MoeForCausalLM.from_pretrained(
+                    model_base,
+                    low_cpu_mem_usage=True,
+                    config=lora_cfg_pretrained,
+                    **kwargs
+                )
+            elif is_qwen2:
+                from llava.model.language_model.llava_qwen import LlavaQwenConfig
+                lora_cfg_pretrained = LlavaQwenConfig.from_pretrained(model_path)
+                model = LlavaQwenForCausalLM.from_pretrained(
+                    model_base,
+                    low_cpu_mem_usage=True,
+                    config=lora_cfg_pretrained,
+                    **kwargs
+                )
+            else:
+                from llava.model.language_model.llava_llama import LlavaConfig
+                lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path)
+                model = LlavaLlamaForCausalLM.from_pretrained(
+                    model_base,
+                    low_cpu_mem_usage=True,
+                    config=lora_cfg_pretrained,
+                    **kwargs
+                )
             token_num, tokem_dim = model.lm_head.out_features, model.lm_head.in_features
             if model.lm_head.weight.shape[0] != token_num:
                 model.lm_head.weight = torch.nn.Parameter(torch.empty(token_num, tokem_dim, device=model.device, dtype=model.dtype))
@@ -131,13 +159,12 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             elif "qwen" in model_name.lower() or "quyen" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path)
                 model_type = _read_model_type(model_path)
-                is_qwen3_moe = model_type == "qwen3_moe" or "qwen3" in model_name.lower() or "qwen3" in model_path.lower()
+                is_qwen3_moe = model_type == "qwen3_moe" or "qwen3-moe" in model_name.lower()
                 if is_qwen3_moe:
                     from llava.model.language_model.llava_qwen3_moe import LlavaQwen3MoeForCausalLM
                     model = LlavaQwen3MoeForCausalLM.from_pretrained(
                         model_path,
-                        low_cpu_mem_usage=True,
-                        attn_implementation=attn_implementation,
+                        low_cpu_mem_usage=False,
                         **kwargs
                     )
                 else:
@@ -149,12 +176,12 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                             setattr(llava_cfg, k, v)
                         model = LlavaQwenForCausalLM.from_pretrained(
                             model_path, low_cpu_mem_usage=True,
-                            attn_implementation=attn_implementation, config=llava_cfg, **kwargs
+                             config=llava_cfg, **kwargs
                         )
                     else:
                         model = LlavaQwenForCausalLM.from_pretrained(
                             model_path, low_cpu_mem_usage=True,
-                            attn_implementation=attn_implementation, **kwargs
+                            **kwargs
                         )
 
             elif "gem" in model_name.lower():
