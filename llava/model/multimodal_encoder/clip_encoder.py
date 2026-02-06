@@ -45,7 +45,13 @@ class CLIPECGTower(nn.Module):
             print('{} is already loaded, `load_model` called again, skipping.'.format(self.vision_tower_name))
             return
 
-        self.ecg_tower, self.ecg_processor, self.model_config = get_ecg_encoder(model_name, checkpoint_path=self.ecg_tower_name, device='cpu')
+        self.ecg_tower, self.ecg_processor, self.model_config = get_ecg_encoder(
+            model_name,
+            checkpoint_path=self.ecg_tower_name,
+            device='cpu',
+            ecg_only=True,
+        )
+
         self.ecg_tower.requires_grad_(False)
 
         self.ecg_tower_is_loaded = True
@@ -70,7 +76,7 @@ class CLIPECGTower(nn.Module):
     @property
     def dummy_feature(self):
         return torch.zeros(1, self.hidden_size, device=self.device, dtype=self.dtype)
-        
+
 class CLIPVisionTower(nn.Module):
     def __init__(self, vision_tower, args, delay_load=False):
         super().__init__()
@@ -98,10 +104,10 @@ class CLIPVisionTower(nn.Module):
         self.vision_tower.requires_grad_(False)
 
         self.is_loaded = True
-        
+
     def is_loaded(self):
         return self.is_loaded
-    
+
     def feature_select(self, image_forward_outs):
         image_features = image_forward_outs.hidden_states[self.select_layer]
         if self.select_feature == 'patch':
