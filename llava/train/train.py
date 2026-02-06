@@ -369,7 +369,9 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
         tokenizer.add_tokens(["<image>"], special_tokens=True)
 
     image_token_index = tokenizer.convert_tokens_to_ids("<image>")
-    im_start, im_end = tokenizer.additional_special_tokens_ids
+    # im_start, im_end = tokenizer.additional_special_tokens_ids
+    im_start = tokenizer.convert_tokens_to_ids("<|im_start|>")
+    im_end = tokenizer.convert_tokens_to_ids("<|im_end|>")
     # unmask_tokens = ["<|im_start|>", "<|im_start|>", "\n"]
     unmask_tokens_idx =  [198, im_start, im_end]
     nl_tokens = tokenizer("\n").input_ids
@@ -731,9 +733,9 @@ def preprocess(
     if conversation_lib.default_conversation.version == "qwen":
         return preprocess_qwen(sources, tokenizer, has_image=has_image)
     # Bailing (AntAngelMed) uses <role>ROLE</role>content format
-    if conversation_lib.default_conversation.version == "bailing":
-        return preprocess_bailing(sources, tokenizer, has_image=has_image,
-                                  system_message="You are a professional medical AI assistant specialized in ECG analysis. You provide accurate, helpful, and detailed answers about electrocardiogram interpretation and cardiac health.")
+    # if conversation_lib.default_conversation.version == "bailing":
+    #     return preprocess_bailing(sources, tokenizer, has_image=has_image,
+    #                               system_message="You are a professional medical AI assistant specialized in ECG analysis. You provide accurate, helpful, and detailed answers about electrocardiogram interpretation and cardiac health.")
     # add end signal and concatenate together
     conversations = []
     for source in sources:
@@ -1088,6 +1090,8 @@ def train(attn_implementation=None):
                 tokenizer=tokenizer,
                 model=model,
             )
+            # fix qwen3/qwen3_moe len(tokenizer)=151669 but config.vocab_size = 151936
+            model.resize_token_embeddings(len(tokenizer))
     elif model_args.version == "v0.5":
         tokenizer.pad_token = tokenizer.unk_token
     else:
@@ -1168,7 +1172,7 @@ def train(attn_implementation=None):
                     if training_args.bf16 and module.weight.dtype == torch.float32:
                         module = module.to(torch.bfloat16)
 
-    model.resize_token_embeddings(len(tokenizer))
+    # model.resize_token_embeddings(len(tokenizer))
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args,
