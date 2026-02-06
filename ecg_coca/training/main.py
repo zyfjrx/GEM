@@ -170,8 +170,8 @@ def main(args):
     if is_master(args) and args.remote_sync is not None:
         # first make sure it works
         result = remote_sync(
-            os.path.join(args.logs, args.name), 
-            os.path.join(args.remote_sync, args.name), 
+            os.path.join(args.logs, args.name),
+            os.path.join(args.remote_sync, args.name),
             args.remote_sync_protocol
         )
         if result:
@@ -182,8 +182,8 @@ def main(args):
         # if all looks good, start a process to do this every args.remote_sync_frequency seconds
         remote_sync_process = start_sync_process(
             args.remote_sync_frequency,
-            os.path.join(args.logs, args.name), 
-            os.path.join(args.remote_sync, args.name), 
+            os.path.join(args.logs, args.name),
+            os.path.join(args.remote_sync, args.name),
             args.remote_sync_protocol
         )
         remote_sync_process.start()
@@ -362,7 +362,7 @@ def main(args):
         elif args.lr_scheduler == "const":
             scheduler = const_lr(optimizer, args.lr, args.warmup, total_steps)
         elif args.lr_scheduler == "const-cooldown":
-            assert args.epochs_cooldown is not None,\
+            assert args.epochs_cooldown is not None, \
                 "Please specify the number of cooldown epochs for this lr schedule."
             cooldown_steps = (data["train"].dataloader.num_batches // args.accum_freq) * args.epochs_cooldown
             scheduler = const_lr_cooldown(
@@ -474,8 +474,8 @@ def main(args):
         logging.info('Final remote sync.')
         remote_sync_process.terminate()
         result = remote_sync(
-            os.path.join(args.logs, args.name), 
-            os.path.join(args.remote_sync, args.name), 
+            os.path.join(args.logs, args.name),
+            os.path.join(args.remote_sync, args.name),
             args.remote_sync_protocol
         )
         if result:
@@ -484,21 +484,33 @@ def main(args):
             logging.info('Final remote sync failed.')
 
 
-def get_ecg_encoder(model_name, checkpoint_path, device):
+def get_ecg_encoder(model_name, checkpoint_path, device, ecg_only: bool = False):
     model_kwargs = {}
     model_config = get_model_config(model_name)
     print(model_name)
-    model, _, preprocess_val = create_model_and_transforms(
-        model_name,
-        "",
-        precision="amp",
-        device=device,
-        jit=False,
-        output_dict=True,
-        **model_kwargs,
-    )
-    model.to_empty(device=device)
-    model = model.ecg
+    if ecg_only:
+        if model_config is None:
+            raise RuntimeError(f"Model config for {model_name} not found.")
+        from ecg_coca.open_clip.model import _build_ecg_tower
+        embed_dim = model_config.get("embed_dim")
+        ecg_cfg = model_config.get("ecg_cfg", {})
+        if embed_dim is None:
+            raise RuntimeError(f"Missing embed_dim in model config for {model_name}.")
+        model = _build_ecg_tower(embed_dim=embed_dim, ecg_cfg=ecg_cfg)
+        preprocess_val = None
+        model.to_empty(device=device)
+    else:
+        model, _, preprocess_val = create_model_and_transforms(
+            model_name,
+            "",
+            precision="amp",
+            device=device,
+            jit=False,
+            output_dict=True,
+            **model_kwargs,
+        )
+        model.to_empty(device=device)
+        model = model.ecg
     checkpoint = pt_load(checkpoint_path, map_location='cpu')
 
     sd = checkpoint["state_dict"]
