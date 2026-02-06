@@ -412,6 +412,7 @@ conv_templates = {
     "v1_mmtag": conv_llava_v1_mmtag,
     "llava_llama_2": conv_llava_llama_2,
     "qwen_2": conv_qwen,
+    "qwen": conv_qwen,
 
     "mpt": conv_mpt,
 }
